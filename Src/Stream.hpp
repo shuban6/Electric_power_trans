@@ -67,7 +67,8 @@ public:
         uint8_t _data = 0;
 
        
-        memcpy(&_data, _pBuffer, sizeof(uint8_t));
+        // memcpy(&_data, _pBuffer, sizeof(uint8_t));
+        _data = _pBuffer[0];
         if(_movePointer)
         {
             _pBuffer += sizeof(uint8_t);
@@ -123,14 +124,15 @@ public:
         return _data;
     }
 
-    static int16_t ReadInt16(uint8_t* &_pBuffer, bool _movePointer = true)
+    static int16_t ReadInt16(uint8_t *&_pBuffer, bool _movePointer = true)
     {
-        int16_t _data = 0;
-        memcpy(&_data, _pBuffer, sizeof(int16_t));
-        if(_movePointer)
+        int16_t _data = (_pBuffer[0] << 8) | _pBuffer[1];
+
+        if (_movePointer)
         {
             _pBuffer += sizeof(int16_t);
         }
+
         return _data;
     }
 

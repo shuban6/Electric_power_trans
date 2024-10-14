@@ -5,7 +5,7 @@
 #include "JudgeSystem.hpp"
 
 #include "BoardPacket.hpp"
-#include "HostPacket.hpp"
+#include "BatterySystem.hpp"
 
 void CAN1_RX0_IRQHandler(void)
 {
@@ -52,23 +52,23 @@ void UART7_IRQHandler(void)
 
 }
 
-void UART8_IRQHandler(void)
-{
-	if(USART_GetFlagStatus(UART8, USART_IT_RXNE))
-	{
-    	uint8_t _data = UART8->DR;
-		HostPacketManager::Instance()->Enqueue(0, &_data, 1);
-	}
+// void UART8_IRQHandler(void)
+// {
+// 	if(USART_GetFlagStatus(UART8, USART_IT_RXNE))
+// 	{
+//     	uint8_t _data = UART8->DR;
+// 		HostPacketManager::Instance()->Enqueue(0, &_data, 1);
+// 	}
 
-    if(USART_GetFlagStatus(UART8, USART_IT_NE))
-	{
-		USART_ReceiveData(UART8);
-	}
+//     if(USART_GetFlagStatus(UART8, USART_IT_NE))
+// 	{
+// 		USART_ReceiveData(UART8);
+// 	}
 
-		uint16_t _data = UART8->SR;
-		_data = UART8->DR;
+// 		uint16_t _data = UART8->SR;
+// 		_data = UART8->DR;
 
-}
+// }
 
 void USART6_IRQHandler(void)
 {
@@ -76,6 +76,7 @@ void USART6_IRQHandler(void)
 	{
     	uint8_t _data = USART6->DR;
 		_data = USART6->DR;
+		BatterySystem::Instance()->Enqueue(_data);
 	}
     if(USART_GetFlagStatus(USART6, USART_IT_NE))
 	{

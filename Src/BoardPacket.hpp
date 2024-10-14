@@ -5,6 +5,11 @@
 #include "CanMsgHandler.hpp"
 #include "ChassisCtrlMsg.hpp"
 #include "GimbalRefMsg.hpp"
+#include "GraspCtrlMsg.hpp"
+#include "PushrodCtrlMsg.hpp"
+#include "ServerCtrlMsg.hpp"
+#include "ActuatorRefMsg.hpp"
+#include "ChargeCtrlMsg.hpp"
 
 #define BOARD_CHANNEL_NUM 2
 
@@ -108,6 +113,13 @@ private:
 
     ChassisCtrlMsg m_ctrlMsg;
     GimbalRefMsg m_gimbalRefMsg;
+    GraspCtrlMsg m_graspctrlMsg;
+    PushrodCtrlMsg m_pushrodCtrlMsg;
+    ChargeCtrlMsg m_chargeCtrlMsg;
+    ServerCtrlMsg m_serverCtrlMsg;
+    ActuatorRefMsg m_actuatorRefMsg;
+
+    
 
 protected:
     virtual bool FlushSendBufferLow();
@@ -119,6 +131,11 @@ public:
 
     ChassisCtrlMsg& GetChassisCtrlMsg() { return m_ctrlMsg; }
     GimbalRefMsg& GetGimbalRefMsg() { return m_gimbalRefMsg; }
+    GraspCtrlMsg& GetGraspCtrlMsg() { return m_graspctrlMsg; }
+    PushrodCtrlMsg& GetPushrodCtrlMsg() { return m_pushrodCtrlMsg; }
+    ServerCtrlMsg& GetServerCtrlMsg() { return m_serverCtrlMsg; }
+    ActuatorRefMsg& GetActuatorRefMsg() { return m_actuatorRefMsg; }
+    ChargeCtrlMsg& GetChargeCtrlMsg() {return m_chargeCtrlMsg; }
 
 	RobotStatePacket& GetRobotStatePacket () {return m_robot_state_packet;}
 	

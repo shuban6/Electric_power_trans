@@ -1,14 +1,13 @@
 #include "IspImp.hpp"
 
 #include "Led.hpp"
+#include "RGB.hpp"
 #include "Buzzer.hpp"
 #include "Dr16.hpp"
 #include "CanManager.hpp"
 #include "CanMsgDispatcher.hpp"
 #include "JudgeSystem.hpp"
-
-#include "BoardPacket.hpp"
-#include "HostPacket.hpp"
+#include "BatterySystem.hpp"
 
 #include "Time.hpp"
 
@@ -29,16 +28,15 @@ void SysTick_Handler(void)
 
 	Dr16::Instance()->Update();	
 	CanMsgDispatcher::Instance()->Update();
-	// JudgeSystem::Instance()->Update();
-	// BoardPacketManager::Instance()->Update();
-	HostPacketManager::Instance()->Update();
+	JudgeSystem::Instance()->Update();
+	BoardPacketManager::Instance()->Update();
+	BatterySystem::Instance()->Update();
 
 	testbot.Tick();
 
 	DjiCanMotorCommander::Instance()->Update();
 
 	BoardPacketManager::Instance()->FlushSendBuffer();
-	HostPacketManager::Instance()->FlushSendBuffer();
 
 	CanManager::Instance()->Update();
 
@@ -50,7 +48,8 @@ void SysTick_Handler(void)
 Dr16* pDr16 = Dr16::Instance();
 CanManager* pCanManager = CanManager::Instance();
 BoardPacketManager* pBoardPacketManager = BoardPacketManager::Instance();
-HostPacketManager* pHostPacketManager = HostPacketManager::Instance();
+BatterySystem* pBatterySystem = BatterySystem::Instance();
+JudgeSystem* pJudpeSystem = JudgeSystem::Instance();
 
 int main(void)
 {
@@ -60,12 +59,14 @@ int main(void)
 	// Hardware init
 	Buzzer::Instance()->Init();
 	Led::Init();
+	rgb::Init();
 	Dr16::Instance()->Init();
 	CanManager::Instance()->Init();
 
 	BoardPacketManager::Instance()->Init();
-	
-	HostPacketManager::Instance()->Init();
+	BatterySystem::Instance()->Init();
+
+	JudgeSystem::Instance()->Init();
 
 	// RobotEngine init
 	testbot.Init();

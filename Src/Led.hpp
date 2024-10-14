@@ -25,7 +25,7 @@ public:
         bsp_led_init();
         for(int i = (int)Led_Red;i <= (int)Led_DebugA0;++i)
         {
-            bsp_led_off((bsp_led_list_t)i);
+            bsp_led_on((bsp_led_list_t)i);
         }
     }
 

@@ -13,6 +13,9 @@ void ChassisStateDummy::Enter(ChassisController* pOwner)
 void ChassisStateDummy::Execute(ChassisController* pOwner)
 {
     GimbalRefMsg& gimbalRefMsg = m_pBoardManager->GetGimbalRefMsg();
+    GraspCtrlMsg& graspCtrlMsg = m_pBoardManager->GetGraspCtrlMsg();
+    PushrodCtrlMsg& pushrodCtrlMsg = m_pBoardManager->GetPushrodCtrlMsg();
+    ChargeCtrlMsg& chargeCtrlMsg = m_pBoardManager->GetChargeCtrlMsg();
 
     if(!gimbalRefMsg.IsMsgTimeout())
     {
@@ -22,6 +25,22 @@ void ChassisStateDummy::Execute(ChassisController* pOwner)
     {
         pOwner->Stop();
     }
+
+    if (!graspCtrlMsg.IsMsgTimeout())
+    {
+        pOwner->SetVy(graspCtrlMsg.GetGraspSpeed());
+    }
+
+    if (!pushrodCtrlMsg.IsMsgTimeout())
+    {
+        pOwner->GetPushrod()->SetPushRodState(pushrodCtrlMsg.GetPushrod());
+    }
+
+    if (!chargeCtrlMsg.IsMsgTimeout())
+    {
+        pOwner->GetPushrod()->SetChargeState(chargeCtrlMsg.GetPushrod());
+    }
+    
 }
 
 void ChassisStateDummy::Exit(ChassisController* pOwner)

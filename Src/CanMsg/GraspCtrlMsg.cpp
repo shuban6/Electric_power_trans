@@ -1,48 +1,57 @@
-#include "GimbalRefMsg.hpp"
+#include "GraspCtrlMsg.hpp"
 #include "CanMsgDispatcher.hpp"
 #include "Stream.hpp"
 
-void GimbalRefMsg::HandleNewCanRxMsg(CanRxMsg* _msg)
+void GraspCtrlMsg::HandleNewCanRxMsg(CanRxMsg *_msg)
 {
     CanMsgHandler::HandleNewCanRxMsg(_msg);
 
     uint8_t *ptr = lastCanMsg.Data;
 
-    uint16_t rawVx = ArrayStreamHelper::ReadUint16(ptr);
+    uint16_t raw_grasp_dir = ArrayStreamHelper::ReadUint16(ptr);
+    uint16_t raw_speed = ArrayStreamHelper::ReadUint16(ptr);
 
-    m_Vx = UncompressUint16(rawVx);
 
+    if ( raw_grasp_dir == 2 )
+    {
+        m_speed = (float)raw_speed;
+    }
+    else if (raw_grasp_dir == 1)
+    {
+        m_speed = (float)-raw_speed;
+    }
 }
 
-float GimbalRefMsg::UncompressUint16(uint16_t _in)
+float GraspCtrlMsg::UncompressUint16(uint16_t _in)
 {
     return (float)(((float)_in / (float)UINT16_MAX * (2.0f * MAX_CHASSIS_CTRL_SPEED)) - MAX_CHASSIS_CTRL_SPEED);
 }
 
-uint16_t GimbalRefMsg::CompressFloat(float _in)
+uint16_t GraspCtrlMsg::CompressFloat(float _in)
 {
     return (uint16_t)((_in + MAX_CHASSIS_CTRL_SPEED) / (2.0f * MAX_CHASSIS_CTRL_SPEED) * (float)UINT16_MAX);
 }
 
-void GimbalRefMsg::Init(CAN_TypeDef* can, uint32_t _stdId)
+void GraspCtrlMsg::Init(CAN_TypeDef *can, uint32_t _stdId)
 {
-    m_Vx = 0.0f;
+    m_speed = 0;
 
     m_canId = _stdId;
     m_pCan = can;
     CanMsgDispatcher::Instance()->RegisterHandler(m_pCan, m_canId, this);
 }
 
-void GimbalRefMsg::SendMsg()
+void GraspCtrlMsg::SendMsg()
 {
     uint8_t buffer[8] = {0};
 
     uint8_t *ptr = buffer;
 
+
     // 0 bytes
-    ArrayStreamHelper::Write(ptr, CompressFloat(m_Vx));
+    ArrayStreamHelper::Write(ptr, CompressFloat(m_speed));
     // 2 bytes
-    // ArrayStreamHelper::Write(ptr, CompressFloat(m_Vy));
+    // ArrayStreamHelper::Write(ptr, CompressFloat(m_speed));
     // // 4 bytes
     // ArrayStreamHelper::Write(ptr, CompressFloat(m_Vw));
 
@@ -51,8 +60,8 @@ void GimbalRefMsg::SendMsg()
     // 7 bytes
 
     uint8_t bitfieldBuffer = 0x00;
+
     buffer[7] = bitfieldBuffer;
 
     CanManager::Instance()->CanTransmit(m_pCan, m_canId, buffer, sizeof(buffer));
 }
-

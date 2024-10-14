@@ -199,7 +199,7 @@ static void SBUS_TO_RC(volatile const uint8_t *sbus_buf, RC_raw_t *rc_raw)
 	rc_raw->mouse.press_l = sbus_buf[12];								   //!< Mouse Left Is Press ?
 	rc_raw->mouse.press_r = sbus_buf[13];								   //!< Mouse Right Is Press ?
 	rc_raw->key.v = sbus_buf[14] | (sbus_buf[15] << 8);					   //!< KeyBoard value
-	rc_raw->rc.ch[4] = sbus_buf[16] | (sbus_buf[17] << 8);				   //NULL
+	rc_raw->rc.ch[4] = sbus_buf[16] | (sbus_buf[17] << 8) & 0x07ff ;	   // NULL
 
 	rc_raw->rc.ch[0] -= RC_CH_VALUE_OFFSET;
 	rc_raw->rc.ch[1] -= RC_CH_VALUE_OFFSET;

@@ -67,8 +67,8 @@ void RobotStatePacket::SerializePacket(Stream &stream)
     SerializeHeader(stream);
 
     stream.SerializeU8(chassis_level);
-	stream.SerializeU8(shooter_level);
-	stream.SerializeU16(shooter_heat);
+    stream.SerializeU8(shooter_level);
+    stream.SerializeU16(shooter_heat);
 
     SerializeCrc16(stream);
 }
@@ -110,13 +110,17 @@ void BoardPacketManager::Init()
     m_testPacket.Init(CIT_Channel0, 0x99);
     m_ctrlMsg.Init(CAN2, 0x18);
     m_gimbalRefMsg.Init(CAN2, 0x10);
-	m_robot_state_packet.Init(CIT_Channel0,0x1F);
+    m_graspctrlMsg.Init(CAN2, 0x20);
+    m_pushrodCtrlMsg.Init(CAN2, 0x30);
+    m_serverCtrlMsg.Init(CAN2, 0x41);
+    m_actuatorRefMsg.Init(CAN2, 0x40);
+    m_chargeCtrlMsg.Init(CAN2, 0x42);
+    m_robot_state_packet.Init(CIT_Channel0,0x1F);
 }
 
 void BoardPacketManager::Update()
 {
     PacketManager::Update();
-
 }
 
 bool BoardPacketManager::FlushSendBufferLow()

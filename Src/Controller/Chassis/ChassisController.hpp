@@ -8,9 +8,11 @@
 #include "M3508.hpp"
 #include "ChassisCtrlMsg.hpp"
 #include "BoardPacket.hpp"
-#include "HostPacket.hpp"
 #include "math_first_order_filter.h"
-#include "Grasp.hpp"
+#include "Infrared.hpp"
+#include "LimitSwitch.hpp"
+#include "Pushrod.hpp"
+
 
 // Forward declaration
 class ChassisController;
@@ -32,6 +34,10 @@ private:
     float m_Vx;
     float m_V_set_length;
 
+    float m_Vy_Expection;
+    float m_Vy;
+    float m_VyFdb;
+
     float m_VxFdb;
 	float m_V_fdb_length;
 
@@ -41,7 +47,6 @@ private:
 	float m_buffer_coe;
 
     float m_MaxWheelSpd;
-	float m_set_max_power;
 
 	FirstOrderFilter voltage_filter;
 	FirstOrderFilter Vx_filters[3];
@@ -49,9 +54,16 @@ private:
 	FirstOrderFilter Vz_filters[2];
 
     Dr16* m_pDr16;
-    Grasp *m_grasp;
+    LimitSwitch* m_pLimitSwitch;
+    Infrared* m_pInfrared;
+    Pushrod* m_pPushrod;
+
     ChassisCtrlMsg *m_pCtrlMsg;
-    GimbalRefMsg *m_pgimbalRefMsg;
+    GimbalRefMsg *m_pGimbalRefMsg;
+    GraspCtrlMsg *m_pGraspCtrlMsg;
+    PushrodCtrlMsg *m_pPushrodCtrlMsg;
+    ChargeCtrlMsg *m_pChargeCtrlMsg;
+
 public:
     enum ChassisWheelType
     {
@@ -92,9 +104,14 @@ public:
     }
 
     void SetVx(float vx){m_Vx = vx;}
-    Grasp* GetGrasp() {return m_grasp;}
+    void SetVy(float vy) { m_Vy_Expection = vy; }
     float GetVx(){ return m_Vx; }
+    float GetVy() { return m_Vy; }
     float GetVxFdb(){ return m_VxFdb; }
+    float GetVyFdb() { return m_VyFdb; }
+    Infrared* GetInfrared() { return m_pInfrared; }
+    LimitSwitch* GetLimitSwitch() {return m_pLimitSwitch; }
+    Pushrod* GetPushrod() { return m_pPushrod; }
 
     M3508* GetChassisMotor(ChassisWheelType _wheel){ return &m_ChassisWheel[_wheel]; }
 };

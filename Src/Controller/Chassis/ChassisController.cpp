@@ -1,9 +1,9 @@
 #include "ChassisController.hpp"
 #include "ChassisStateDummy.hpp"
 #include "ChassisStateRc.hpp"
-#include "bsp_capacitor_relay.h"
 #include "arm_math.h"
 #include "Led.hpp"
+#include "RGB.hpp"
 
 const float ChassisController::M3508StandardSpeedKp = 800.0f;
 const float ChassisController::M3508StandardSpeedKi = 0.0f;
@@ -16,8 +16,7 @@ const float ChassisController::RadiusOfWheel = 0.0175f;// Meter
 
 
 ChassisController::ChassisController() : ControllerEntity(ECT_ChassisController),
-	m_MaxWheelSpd(M3508MaxSpeed),m_set_max_power(53.0f),
-	chassisFsm(this)
+    m_MaxWheelSpd(M3508MaxSpeed),chassisFsm(this)
 {}
 
 void ChassisController::Init()
@@ -27,7 +26,7 @@ void ChassisController::Init()
     for(int i = 0; i < CWT_LENGTH; ++i)
     {
         m_ChassisWheel[i].RegistMotor(CAN1, 0x201 + i);
-		m_ChassisWheel[i].controlMode = Motor::SPD_MODE;
+        m_ChassisWheel[i].controlMode = Motor::SPD_MODE;
         m_ChassisWheel[i].pidSpeed.kp = M3508StandardSpeedKp;
         m_ChassisWheel[i].pidSpeed.ki = M3508StandardSpeedKi;
         m_ChassisWheel[i].pidSpeed.kd = M3508StandardSpeedKd;
@@ -36,20 +35,27 @@ void ChassisController::Init()
     }
 
     m_pDr16 = Dr16::Instance();
-    m_grasp = Grasp::Instance();
+    m_pLimitSwitch = LimitSwitch::Instance();
+    m_pInfrared = Infrared::Instance();
+    m_pPushrod = Pushrod::Instance();
 
-    Grasp::Instance()->Init();
+    LimitSwitch::Instance() -> Init();
+    Infrared::Instance()->Init();
+    Pushrod::Instance()->Init();
 
     m_pCtrlMsg = &BoardPacketManager::Instance()->GetChassisCtrlMsg();
-    m_pgimbalRefMsg = &BoardPacketManager::Instance()->GetGimbalRefMsg();
-	
-	Vx_filters[0].SetTau(0.15f);
-	Vx_filters[0].SetUpdatePeriod(1);
-	
-	Vx_filters[1].SetTau(0.05f);
-	Vx_filters[1].SetUpdatePeriod(1);
-	
-  chassisFsm.Init();
+    m_pGimbalRefMsg = &BoardPacketManager::Instance()->GetGimbalRefMsg();
+    m_pGraspCtrlMsg = &BoardPacketManager::Instance()->GetGraspCtrlMsg();
+    m_pPushrodCtrlMsg = &BoardPacketManager::Instance()->GetPushrodCtrlMsg();
+    m_pChargeCtrlMsg = &BoardPacketManager::Instance()->GetChargeCtrlMsg();
+
+    Vx_filters[0].SetTau(0.15f);
+    Vx_filters[0].SetUpdatePeriod(1);
+
+    Vx_filters[1].SetTau(0.05f);
+    Vx_filters[1].SetUpdatePeriod(1);
+
+    chassisFsm.Init();
 }
 
 void ChassisController::Update()
@@ -57,18 +63,41 @@ void ChassisController::Update()
     chassisFsm.HandleInput();
 
     chassisFsm.Update();
-    Grasp::Instance()->Update();
-
+    
+    // Grasp::Instance()->Update();
+    Infrared::Instance()->Update();
+    Pushrod::Instance()->Update();
+    
     ChassisSpd2MotorSpd();
 
     FilterUpdate();
     MaxDeltaVLimit();
 
     m_pCtrlMsg->SetVx(m_VxFdb);
-    m_pCtrlMsg->SendMsg();
+    m_pCtrlMsg->SetInfrared(Infrared::Instance()->GetInfraredState());
+    m_pCtrlMsg->SetLimitSwitch_front(LimitSwitch::Instance()->GetLimitSwitchFrontState());
+    m_pCtrlMsg->SetLimitSwitch_rear(LimitSwitch::Instance()->GetLimitSwitchRearState());
     
-	MotorSpd2ChassisSpdFdb();
-	
+    if (Time::GetTick() % 10 == 0)
+    {
+        m_pCtrlMsg->SendMsg();
+    }
+
+    if (abs(m_Vx) > 5)
+    {
+        rgb::On_green();
+    }
+    else if (abs(m_Vy) > 5)
+    {
+        rgb::On_red();
+    }
+    else
+    {
+        rgb::On_yellow();
+    }
+
+    MotorSpd2ChassisSpdFdb();
+
     if(!m_ChassisWheel[CWT_RightFront].sensorFeedBack.IsTimeout())
     {
         Led::On(Led::DebugA0);
@@ -124,7 +153,37 @@ void ChassisController::MotorSpd2ChassisSpdFdb()
 
 void ChassisController::ChassisSpd2MotorSpd()
 {
-    float temp_vector[4] = {- m_Vx,
+    bool frontLimitSwitchActive = m_pLimitSwitch->GetLimitSwitchFrontState();
+    bool rearLimitSwitchActive = m_pLimitSwitch->GetLimitSwitchRearState();
+
+    if (frontLimitSwitchActive && rearLimitSwitchActive)
+    {
+        m_Vy = m_Vy_Expection;
+    }
+    else if (!frontLimitSwitchActive && rearLimitSwitchActive)
+    {
+        if (m_Vy_Expection > 5)
+        {
+            m_Vy = m_Vy_Expection;
+        }
+        else
+        {
+            m_Vy = 0;
+        }
+    }
+    else if (frontLimitSwitchActive && !rearLimitSwitchActive)
+    {
+        if (m_Vy_Expection < 5)
+        {
+            m_Vy = m_Vy_Expection;
+        }
+        else
+        {
+            m_Vy = 0;
+        }
+    }
+
+    float temp_vector[4] = {+ m_Vy,
                             + m_Vx,
                             - m_Vx,
                             + m_Vx};
@@ -135,10 +194,10 @@ void ChassisController::ChassisSpd2MotorSpd()
             temp_max = fabs(temp_vector[i]);
         }
     }
-	m_V_set_length = m_Vx;
+    m_V_set_length = m_Vx;
 
-	for (int i = 0; i < 4; ++i)
-	{
+    for (int i = 0; i < 4; ++i)
+    {
         m_ChassisWheel[i].speedSet = temp_vector[i];
     }
 }
@@ -214,6 +273,3 @@ void ChassisController::MaxDeltaVLimit()
         m_ChassisWheel[i].pidSpeed.maxOut = M3508StandardSpeedMaxout + VxFdbAbs * 200.0f;
     }
 }
-
-
-

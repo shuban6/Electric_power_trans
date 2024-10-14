@@ -5,7 +5,7 @@
 #include "ChassisController.hpp"
 #include "Dr16.hpp"
 #include "BoardPacket.hpp"
-#include "IspImp.hpp"
+#include "ChargeCtrlMsg.hpp"
 
 
 class ChassisStateDummy : public State<ChassisController>

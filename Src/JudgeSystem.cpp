@@ -1,74 +1,52 @@
 #include "JudgeSystem.hpp"
-#include "Time.hpp"
-#include "JudgeMsgHandler.hpp"
 
-const uint8_t JudgeSystem::Magic_Number = 0xA5;
-const uint8_t JudgeSystem::Header_Length = 5;
 const uint32_t JudgeSystem::Flush_Tick = 100;
+const uint16_t JudgeSystem::s_Tick = 1000;
 
 void JudgeSystem::Init()
 {
     bsp_judge_init();
+    m_serverCtrlMsg = &BoardPacketManager::Instance()->GetServerCtrlMsg();
+    m_actuatorRefMsg = &BoardPacketManager::Instance()->GetActuatorRefMsg();
+
+    m_pBS = BatterySystem::Instance();
+    m_pPushrod = Pushrod::Instance();
 }
 
 void JudgeSystem::Update()
 {
-    if(Time::GetTick() % 1000 == 0)
-    {
-        m_headerperS = m_hs;
-        m_hs = 0;
-    }
     uint8_t _currentRear = m_RxQueueRear;
 
     while(m_RxQueueFront != _currentRear)
     {
-        uint8_t _data = m_RxQuene[m_RxQueueFront];
+        uint8_t _data = m_RxQueue[m_RxQueueFront];
 
         if(m_FrameBufferLen < JS_FRAME_BUFFER_LEN)
         {
             m_FrameBuffer[m_FrameBufferLen] = _data;
             ++m_FrameBufferLen;
-            if(m_FrameBufferLen == m_ExpectedLen)
+            if (m_FrameBufferLen > 0 && m_FrameBuffer[m_FrameBufferLen - 1] == '}')
             {
-                if(Crc::VerifyCrc16CheckSum(m_FrameBuffer, m_FrameBufferLen))
-                {
-                    HandlePacket();
-                }
+                HandlePacket();
+                m_FrameBufferLen = 0;
             }
         }
             
-        if(m_CheckingHeader)
-        {
-            m_HeaderBuffer[m_HeaderBufferLen] = _data;
-            ++m_HeaderBufferLen;
-
-            if(m_HeaderBufferLen == Header_Length)
-            {
-                m_HeaderBufferLen = 0;
-                m_CheckingHeader = false;
-
-                if(Crc::VerifyCrc8CheckSum(m_HeaderBuffer, Header_Length))
-                {
-                    uint8_t* _ptr = m_HeaderBuffer + 1;
-                    m_ExpectedLen = ArrayStreamHelper::ReadUint16(_ptr, false) + 9;
-                    //if(Crc::VerifyCrc16CheckSum(m_FrameBuffer, m_FrameBufferLen - Header_Length))
-                    //HandlePacket();
-
-                    memcpy(m_FrameBuffer, m_HeaderBuffer, Header_Length);
-                    m_FrameBufferLen = Header_Length;
-                }
-            }
-        }
-
-        if(_data == Magic_Number)
-        {
-            m_CheckingHeader = true;
-            m_HeaderBufferLen = 0;
-            m_HeaderBuffer[m_HeaderBufferLen] = _data;
-            ++m_HeaderBufferLen;
-        }
-
         m_RxQueueFront = (m_RxQueueFront + 1) % JS_RX_QUEUE_LEN;
+    }
+
+    Charge_Update();
+
+
+    // send actuator feedback
+    actuator_success = m_actuatorRefMsg->GetSucess();
+    if (actuator_success)
+    {
+        if (!charge_command)
+        {
+            Make_actuator_json();
+        }
+        m_actuatorRefMsg->SetSuccess(0);
     }
 
     if(Time::GetTick() % Flush_Tick == 0)
@@ -81,112 +59,72 @@ void JudgeSystem::HandlePacket()
 {
     memcpy(m_CurrentFrame, m_FrameBuffer, m_FrameBufferLen);
 
-    uint8_t* _ptr = m_CurrentFrame + Header_Length;
-    uint16_t _packetId = ArrayStreamHelper::ReadUint16(_ptr);
+    uint8_t* _ptr = m_CurrentFrame;
 
-    switch (_packetId)
+    receive_success = false;
+    receive_success = Parse_json(_ptr,m_FrameBufferLen);
+
+    if (receive_success)
     {
-    case JPT_GameStatus:
-        memcpy(&GameStatus, _ptr, sizeof(GameStatus));
-        break;
-    
-    case JPT_GameResult:
-        memcpy(&GameResult, _ptr, sizeof(GameResult));
-        break;
-
-    case JPT_GameRobotHp:
-        memcpy(&GameRobotHp, _ptr, sizeof(GameRobotHp));
-        break;
-            
-    case JPT_DartStatus:
-        memcpy(&DartStatus, _ptr, sizeof(DartStatus));
-        break;
-            
-    case JPT_IcraBuffDebuffZoneStatus:
-        memcpy(&IcraBuffDebuffZoneStatus, _ptr, sizeof(IcraBuffDebuffZoneStatus));
-        break;
-            
-    case JPT_EventData:
-        memcpy(&EventData, _ptr, sizeof(EventData));
-        break;
-            
-    case JPT_SupplyProjectileAction:
-        memcpy(&SupplyProjectileAction, _ptr, sizeof(SupplyProjectileAction));
-        break;
-            
-    case JPT_RefereeWarning:
-        memcpy(&RefereeWarning, _ptr, sizeof(RefereeWarning));
-        break;
-            
-    case JPT_DartRemainingTime:
-        memcpy(&DartRemainingTime, _ptr, sizeof(DartRemainingTime));
-        break;
-            
-    case JPT_GameRobotStatus:
-        memcpy(&GameRobotStatus, _ptr, sizeof(GameRobotStatus));
-        break;
-            
-    case JPT_PowerHeatData:
-        memcpy(&PowerHeatData, _ptr, sizeof(PowerHeatData));
-        break;
-    
-    case JPT_GameRobotPos:
-        memcpy(&GameRobotPos, _ptr, sizeof(GameRobotPos));
-        break;
-            
-    case JPT_Buff:
-        memcpy(&Buff, _ptr, sizeof(Buff));
-        break;
-            
-    case JPT_AerialRobotEnergy:
-        memcpy(&AerialRobotEnergy, _ptr, sizeof(AerialRobotEnergy));
-        break;
-            
-    case JPT_RobotHurt:
-        memcpy(&RobotHurt, _ptr, sizeof(RobotHurt));
-        break;
-
-    case JPT_ShootData:
-        memcpy(&ShootData, _ptr, sizeof(ShootData));
-        break;
-
-    case JPT_BulletRemaining:
-        memcpy(&BulletRemaining, _ptr, sizeof(BulletRemaining));
-        break;
-
-    case JPT_RfidStatus:
-        memcpy(&RfidStatus, _ptr, sizeof(RfidStatus));
-        break;
-
-    case JPT_DartClientCmd:
-        memcpy(&DartClientCmd, _ptr, sizeof(DartClientCmd));
-        break;
-    
-    case JPT_Custom:
-        memcpy(&CustomHeader, _ptr, sizeof(CustomHeader));
-        HandleCustomPacket();
-        break;
-
-    default:
-        break;
+        if(m_Command == 2)
+        {
+            charge_command = true;
+            RSOC_flag = false;
+        } else
+        {
+            send_success = Make_receive_json();
+            m_pPushrod->SetChargeState(2);
+            charge_command = false;
+        }
+        m_serverCtrlMsg->SetID(m_goal);
+        m_serverCtrlMsg->SetCommand(m_Command);
+        m_serverCtrlMsg->SendMsg();
     }
-
-    m_PacketLastUpdateTick.Modify((uint32_t)_packetId, Time::GetTick());
-
-    ++m_hs;
 }
 
-void JudgeSystem::HandleCustomPacket()
+void JudgeSystem::Charge_Update(void)
 {
-    uint16_t _len = 0;
-    memcpy(&_len, &m_CurrentFrame[1], sizeof(uint16_t));
-    _len -= sizeof(JS_CustomHeader);
+    RSOC = m_pBS->GetRSOC();
+    is_charge = m_pBS->GetCharge();
 
-    JudgeMsgHandler** _handler = m_CustomMsgHandlerTable.Search(CustomHeader.data_cmd_id);
-
-    if(_handler != nullptr)
+    if (!start_flag)
     {
-        (*_handler)->HandleNewMsg(&m_CurrentFrame[Header_Length + sizeof(uint16_t) + sizeof(JS_CustomHeader)], _len);
+        free_state();
+        start_flag = true;
+    }
+
+    if(RSOC < 20)
+    {
+        RSOC_flag = false;
+        free_state_flag = true;
+    }
+    
+    // send start charge 
+    if (is_charge && !charge_flag)
+    {
+        Start_Charge();
+        charge_flag = true;
+        free_state_flag = true;
+    }
+    else if (!is_charge)
+    {
+        charge_flag = false;
+        RSOC_flag = false;
+    }
+
+    if(free_state_flag)
+    {
+        count++;
+        if(count == 10000)
+        {
+            if (RSOC > 30 && !RSOC_flag)
+            {
+                free_state();
+                RSOC_flag = true;
+            }
+            count = 0;
+            free_state_flag = false;
+        }
     }
 }
 
@@ -197,11 +135,6 @@ void JudgeSystem::FlushBuffer()
         return;
     }
 
-    if(m_GraphicBufferLen > 0 || m_CharBufferLen > 0)
-    {
-        AddGraphicElement();
-    }
-
     if(m_SendBufferLen != 0)
     {
         bsp_judge_send(m_SendBuffer, m_SendBufferLen);
@@ -209,311 +142,388 @@ void JudgeSystem::FlushBuffer()
     }
 }
 
-bool JudgeSystem::Add2SendBuffer(RobotIdType _receiverId, uint16_t _frameId, uint8_t* _pData, uint16_t _dataLen)
+bool JudgeSystem::Add2SendBuffer(uint8_t* _pData, uint16_t _dataLen)
 {
-    if(m_SendBufferLen + _dataLen + 15 > JS_SEND_BUFFER_LEN)
+    if(m_SendBufferLen + _dataLen > JS_SEND_BUFFER_LEN)
     {
         return false;
     }
-
-    uint8_t* _pStart = &m_SendBuffer[m_SendBufferLen];
-
-    uint8_t _header[7];
-
-    _header[0] = Magic_Number;
-    uint16_t _realLen = _dataLen + sizeof(JS_CustomHeader);
-    memcpy(&_header[1], &_realLen, sizeof(uint16_t));
-    _header[3] = m_SendSeq ++;
-    _header[4] = Crc::Get_CRC8_Check_Sum(_header, 4, Crc::CRC8_INIT);
-
-    uint16_t _jpt_customId = JPT_Custom;
-    memcpy(&_header[5], &_jpt_customId, sizeof(uint16_t));
-
-    memcpy(&m_SendBuffer[m_SendBufferLen], _header, sizeof(_header));
-    m_SendBufferLen += sizeof(_header);
-
-    JS_CustomHeader _customHeader;
-    _customHeader.data_cmd_id = _frameId;
-    _customHeader.sender_ID = GameRobotStatus.robot_id;
-    _customHeader.receiver_ID = _receiverId;
-    memcpy(&m_SendBuffer[m_SendBufferLen], &_customHeader, sizeof(_customHeader));
-    m_SendBufferLen += sizeof(_customHeader);
 
     memcpy(&m_SendBuffer[m_SendBufferLen], _pData, _dataLen);
     m_SendBufferLen +=_dataLen;
 
-    uint16_t _crc16 = Crc::Get_CRC16_Check_Sum(
-        _pStart,
-        sizeof(_header) + _dataLen + sizeof(_customHeader),
-        Crc::CRC16_INIT
-    );
+    return true;
+}
 
-    memcpy(&m_SendBuffer[m_SendBufferLen], &_crc16, sizeof(_crc16));
-    m_SendBufferLen +=sizeof(_crc16);
+bool JudgeSystem::Parse_json(uint8_t* _pData, uint16_t _dataLen)
+{
+    cJSON* json = cJSON_ParseWithLength((const char*)_pData, _dataLen);
+    if(json != NULL)
+    {
+        cJSON* ptr = cJSON_GetObjectItem(json, "take_id"); 
+        if(ptr != NULL)
+        {
+            strcpy(m_take_id, ptr->valuestring);
+            m_goal = parseStringToUint8((char *)m_take_id);
+        }
+
+        ptr = cJSON_GetObjectItem(json, "give_id");
+        if (ptr != NULL)
+        {
+            strcpy(m_give_id, ptr->valuestring);
+            m_goal = parseStringToUint8((char *)m_give_id);
+        }
+        
+
+        ptr = cJSON_GetObjectItem(json, "command");
+        if (ptr != NULL)
+        {
+            if (strcmp(ptr->valuestring, "0") == 0)
+            {
+                m_Command = 0;
+                takeorgive = 1;
+            }
+            else if (strcmp(ptr->valuestring, "1") == 0)
+            {
+                m_Command = 1;
+                takeorgive = 2;
+            }
+            else if (strcmp(ptr->valuestring, "2") == 0)
+            {
+                m_Command = 2;
+            }
+
+        }
+
+        ptr = cJSON_GetObjectItem(json, "chg_id");
+        if(ptr != NULL)
+        {
+            strcpy(m_chg_id, ptr->valuestring);
+        }
+
+        ptr = cJSON_GetObjectItem(json, "task_id");
+        if (ptr != NULL)
+        {
+            strcpy(m_task_id, ptr->valuestring);
+        }
+
+        cJSON_Delete(json);
+    }
 
     return true;
 }
 
-JudgeSystem::RobotIdType JudgeSystem::GetClientId()
+bool JudgeSystem::Make_receive_json(void)
 {
-    uint8_t _id = GameRobotStatus.robot_id;
+    const char *code = "20000";
+    const char *robot_id = "002";
+    const char *msg = "receive";
+    const char *success = receive_success ? "\"true" : "\"false";
 
-    RobotIdType _clientId;
-    switch (_id)
-    {
-    case RIT_RedHero:
-        _clientId = RIT_ClientRedHero;
-        break;
+    m_CurrentSendBufferLen = 0;
 
-    case RIT_RedEngineer:
-        _clientId = RIT_ClientRedEngineer;
-        break;
-
-    case RIT_RedInfantry_3:
-        _clientId = RIT_ClientRedInfantry_3;
-        break;
-
-    case RIT_RedInfantry_4:
-        _clientId = RIT_ClientRedInfantry_4;
-        break;                
-    
-    case RIT_RedInfantry_5:
-        _clientId = RIT_ClientRedInfantry_5;
-        break;
-
-    case RIT_RedDrone:
-        _clientId = RIT_ClientRedDrone;
-        break;
-
-    case RIT_BluHero:
-        _clientId = RIT_ClientBluHero;
-        break;
-
-    case RIT_BluEngineer:
-        _clientId = RIT_ClientBluEngineer;
-        break;
-
-    case RIT_BluInfantry_3:
-        _clientId = RIT_ClientBluInfantry_3;
-        break;
-
-    case RIT_BluInfantry_4:
-        _clientId = RIT_ClientBluInfantry_4;
-        break;                
-    
-    case RIT_BluInfantry_5:
-        _clientId = RIT_ClientBluInfantry_5;
-        break;
-
-    case RIT_BluDrone:
-        _clientId = RIT_ClientBluDrone;
-        break;
-
-    default:
-        break;
-    }
-		
-	return _clientId;
-}
-
-void JudgeSystem::DeleteLayer(DelectType _op, uint8_t _layer)
-{
-    if(0xFF == _layer && DT_DeleteOne == _op)
-    {
-        _op = DT_Null;
-    }
-    JS_DeleteGraphic _deleteG;
-    _deleteG.operate_tpye = _op;
-    _deleteG.layer = _layer;
-
-    uint8_t _buffer[2];
-
-    memcpy(_buffer, &_deleteG, 2);
-
-    Add2SendBuffer(GetClientId(), DOP_Delete, _buffer, 2);
-
-    m_HasGraphicOp = true;
-}
-
-void JudgeSystem::AddGraphicElement()
-{
-    if(m_HasGraphicOp)
-    {
-        m_HasGraphicOp = false;
-        m_GraphicBufferLen = 0;
-        return;
-    }
-
-    if(m_SendBufferLen != 0)
-    {
-        m_GraphicBufferLen = 0;
-        return;
-    }
-    
-    if(AddSevenGraphicElement())
-    {
-        return;
-    }
-    if(AddFiveGraphicElement())
-    {
-        return;
-    }
-    if(AddTwoGraphicElement())
-    {
-        return;
-    }
-    if(AddOneGraphicElement())
-    {
-        return;
-    }
-    if(AddCharGraphicElement())
-    {
-        return;
-    }
-}
-
-bool JudgeSystem::AddOneGraphicElement()
-{
-    if(m_GraphicBufferLen < 1)
+    if (!append_string("{\"code\":\"") ||
+        !append_string(code) ||
+        !append_string("\",\"robot_id\":\"") ||
+        !append_string(robot_id) ||
+        !append_string("\",\"msg\":\"") ||
+        !append_string(msg) ||
+        !append_string("\",\"success\":") ||
+        !append_string(success) ||
+        !append_string("\"}"))
     {
         return false;
     }
 
-    uint8_t _size = 15;
-
-    if(_size + 15 > (JS_SEND_BUFFER_LEN - m_SendBufferLen))
+    if (m_CurrentSendBufferLen < JS_FRAME_BUFFER_LEN)
+    {
+        m_CurrentSendBuffer[m_CurrentSendBufferLen] = '\0';
+    }
+    else
     {
         return false;
     }
 
-    uint8_t _buffer[15];
-
-    memcpy(_buffer, &m_GraphicBuffer[m_GraphicBufferLen - 1], _size);
-    Add2SendBuffer(GetClientId(), DOP_DrawOne, _buffer, _size);
-
-    m_GraphicBufferLen -= 1;
-
+    Add2SendBuffer(m_CurrentSendBuffer, m_CurrentSendBufferLen);
     return true;
 }
 
-bool JudgeSystem::AddTwoGraphicElement()
+bool JudgeSystem::Make_actuator_json(void)
 {
-    if(m_GraphicBufferLen < 2)
+    const char *code_take = "20001";
+    const char *code_give = "20002";
+    const char *robot_id = "002";
+    const char *msg = "actuator";
+    const char *success = actuator_success ? "\"true" : "\"false";
+
+    m_CurrentSendBufferLen = 0;
+
+    if (takeorgive == 1)
+    {
+        if (!append_string("{\"code\":\"") ||
+            !append_string(code_take))
+        {
+            return false;
+        }
+    }
+    else if (takeorgive == 2)
+    {
+        if (!append_string("{\"code\":\"") ||
+            !append_string(code_give))
+        {
+            return false;
+        }
+    }
+
+    if (!append_string("\",\"robot_id\":\"") ||
+        !append_string(robot_id) ||
+        !append_string("\",\"msg\":\"") ||
+        !append_string(msg) ||
+        !append_string("\",\"chg_id\":\"") ||
+        !append_string((char *)m_chg_id) ||
+        !append_string("\",\"task_id\":\"") ||
+        !append_string((char *)m_task_id))
     {
         return false;
     }
 
-    uint8_t _size = 30;
+    if (takeorgive == 1)
+    {
+        if (!append_string("\",\"take_id\":\"") ||
+            !append_string((char *)m_take_id))
+        {
+            return false;
+        }
+    }
+    else if (takeorgive == 2)
+    {
+        uint8_t RSOC = m_pBS->GetRSOC();
+        if(RSOC < 20)
+        {
+            if (!append_string("\",\"give_id\":\"") ||
+                !append_string((char *)m_give_id) ||
+                !append_string("\",\"is_charge\":\"") ||
+                !append_string("1"))
+                {
+                    return false;
+                }
+        }else
+        {
+            if (!append_string("\",\"give_id\":\"") ||
+                !append_string((char *)m_give_id) ||
+                !append_string("\",\"is_charge\":\"") ||
+                !append_string("0"))
+                {
+                    return false;
+                }
+        }
+    }
 
-    if(_size + 15 > (JS_SEND_BUFFER_LEN - m_SendBufferLen))
+    if (!append_string("\",\"success\":") ||
+        !append_string(success) ||
+        !append_string("\"}"))
     {
         return false;
     }
 
-    uint8_t _buffer[30];
+    if (m_CurrentSendBufferLen < JS_FRAME_BUFFER_LEN)
+    {
+        m_CurrentSendBuffer[m_CurrentSendBufferLen] = '\0';
+    }
+    else
+    {
+        return false;
+    }
 
-    memcpy(_buffer, &m_GraphicBuffer[m_GraphicBufferLen - 2], _size);
-    Add2SendBuffer(GetClientId(), DOP_DrawTwo, _buffer, _size);
-
-    m_GraphicBufferLen -= 2;
-
+    Add2SendBuffer(m_CurrentSendBuffer, m_CurrentSendBufferLen);
+    send_success = true;
     return true;
 }
 
-bool JudgeSystem::AddFiveGraphicElement()
+uint8_t JudgeSystem::parseStringToUint8(char *str)
 {
-    if(m_GraphicBufferLen < 5)
+    char *dashm_CurrentSendBufferLen = str;
+    while (*dashm_CurrentSendBufferLen && *dashm_CurrentSendBufferLen != '-')
+    {
+        dashm_CurrentSendBufferLen++;
+    }
+
+    if (*dashm_CurrentSendBufferLen == '-' && *(dashm_CurrentSendBufferLen + 1) != '\0')
+    {
+        int result = 0;
+        char *numberStr = dashm_CurrentSendBufferLen + 1;
+
+        while (*numberStr)
+        {
+            if (*numberStr >= '0' && *numberStr <= '9')
+            {
+                result = result * 10 + (*numberStr - '0');
+            }
+            numberStr++;
+        }
+
+        return static_cast<uint8_t>(result);
+    }
+    else
+    {
+        return 0;
+    }
+}
+
+bool JudgeSystem::free_state(void)
+{
+    const char *code = "20010";
+    const char *robot_id = "002";
+    const char *robot_sts = "0";
+    const char *msg = "free state";
+    const char *success = "true";
+
+    m_CurrentSendBufferLen = 0;
+
+    if (!append_string("{\"code\":\"") ||
+        !append_string(code) ||
+        !append_string("\",\"robot_id\":\"") ||
+        !append_string(robot_id) ||
+        !append_string("\",\"robot_sts\":\"") ||
+        !append_string(robot_sts) ||
+        !append_string("\",\"msg\":\"") ||
+        !append_string(msg) ||
+        !append_string("\",\"success\":\"") ||
+        !append_string(success) ||
+        !append_string("\"}"))
     {
         return false;
     }
 
-    uint8_t _size = 75;
-
-    if(_size + 15 > (JS_SEND_BUFFER_LEN - m_SendBufferLen))
+    if (m_CurrentSendBufferLen < JS_FRAME_BUFFER_LEN)
+    {
+        m_CurrentSendBuffer[m_CurrentSendBufferLen] = '\0';
+    }
+    else
     {
         return false;
     }
 
-    uint8_t _buffer[75];
-
-    memcpy(_buffer, &m_GraphicBuffer[m_GraphicBufferLen - 5], _size);
-    Add2SendBuffer(GetClientId(), DOP_DrawFive, _buffer, _size);
-
-    m_GraphicBufferLen -= 5;
-
+    Add2SendBuffer(m_CurrentSendBuffer, m_CurrentSendBufferLen);
     return true;
 }
 
-bool JudgeSystem::AddSevenGraphicElement()
+bool JudgeSystem::Ready_Charge(void)
 {
-    if(m_GraphicBufferLen < 7)
+    const char *code = "20012";
+    const char *robot_id = "002";
+    const char *is_charge = "0";
+    const char *success = "true";
+
+    m_CurrentSendBufferLen = 0;
+
+    if (!append_string("{\"code\":\"") ||
+        !append_string(code) ||
+        !append_string("\",\"robot_id\":\"") ||
+        !append_string(robot_id) ||
+        !append_string("\",\"is_charge\":\"") ||
+        !append_string(is_charge) ||
+        !append_string("\",\"success\":\"") ||
+        !append_string(success) ||
+        !append_string("\"}"))
     {
         return false;
     }
 
-    uint8_t _size = 105;
-
-    if(_size + 15 > (JS_SEND_BUFFER_LEN - m_SendBufferLen))
+    if (m_CurrentSendBufferLen < JS_FRAME_BUFFER_LEN)
+    {
+        m_CurrentSendBuffer[m_CurrentSendBufferLen] = '\0';
+    }
+    else
     {
         return false;
     }
 
-    uint8_t _buffer[105];
-
-    memcpy(_buffer, &m_GraphicBuffer[m_GraphicBufferLen - 7], _size);
-    Add2SendBuffer(GetClientId(), DOP_DrawSeven, _buffer, _size);
-
-    m_GraphicBufferLen -= 7;
-    
+    Add2SendBuffer(m_CurrentSendBuffer, m_CurrentSendBufferLen);
     return true;
 }
 
-bool JudgeSystem::AddCharGraphicElement()
+bool JudgeSystem::Error_feedback(void)
 {
-    uint8_t _size = 45;
-    
-    if(m_CharBuffer == 0)
+    const char *code = "20013";
+    const char *robot_id = "002";
+    const char *msg = "Actuator Error";
+    const char *success = "false";
+
+    m_CurrentSendBufferLen = 0;
+
+    if (!append_string("{\"code\":\"") ||
+        !append_string(code) ||
+        !append_string("\",\"robot_id\":\"") ||
+        !append_string(robot_id) ||
+        !append_string("\",\"msg\":\"") ||
+        !append_string(msg) ||
+        !append_string("\",\"success\":\"") ||
+        !append_string(success) ||
+        !append_string("\"}"))
     {
         return false;
     }
 
-    if(_size + 15 > (JS_SEND_BUFFER_LEN - m_SendBufferLen))
+    if (m_CurrentSendBufferLen < JS_FRAME_BUFFER_LEN)
+    {
+        m_CurrentSendBuffer[m_CurrentSendBufferLen] = '\0';
+    }
+    else
     {
         return false;
     }
 
-    uint8_t _buffer[45];
-
-    memcpy(_buffer, &m_CharBuffer[m_CharBufferLen - 1], _size);
-    Add2SendBuffer(GetClientId(), DOP_DrawChar, _buffer, _size);
-
-    -- m_CharBufferLen;
-
+    Add2SendBuffer(m_CurrentSendBuffer, m_CurrentSendBufferLen);
     return true;
 }
 
-bool JudgeSystem::ModfiyShapeOnClient(JS_GraphicData* _pData)
+bool JudgeSystem::Start_Charge(void)
 {
-    if(m_GraphicBufferLen >= 16)
+    const char *code = "20012";
+    const char *robot_id = "002";
+    const char *is_charge = "1";
+    const char *success = "true";
+
+    m_CurrentSendBufferLen = 0;
+
+    if (!append_string("{\"code\":\"") ||
+        !append_string(code) ||
+        !append_string("\",\"robot_id\":\"") ||
+        !append_string(robot_id) ||
+        !append_string("\",\"is_charge\":\"") ||
+        !append_string(is_charge) ||
+        !append_string("\",\"success\":\"") ||
+        !append_string(success) ||
+        !append_string("\"}"))
     {
         return false;
     }
 
-    memcpy(&m_GraphicBuffer[m_GraphicBufferLen], _pData, sizeof(JS_GraphicData));
-    ++m_GraphicBufferLen;
+    if (m_CurrentSendBufferLen < JS_FRAME_BUFFER_LEN)
+    {
+        m_CurrentSendBuffer[m_CurrentSendBufferLen] = '\0';
+    }
+    else
+    {
+        return false;
+    }
 
+    Add2SendBuffer(m_CurrentSendBuffer, m_CurrentSendBufferLen);
     return true;
 }
 
-bool JudgeSystem::ModfiyCharOnClient(JS_ClientCustomCharacter* _pData)
+bool JudgeSystem::append_string(const char *str)
 {
-    if(m_CharBufferLen >= 8)
+    size_t len = strlen(str);
+    if (m_CurrentSendBufferLen + len < JS_FRAME_BUFFER_LEN)
+    {
+        memcpy(&m_CurrentSendBuffer[m_CurrentSendBufferLen], str, len);
+        m_CurrentSendBufferLen += len;
+        return true;
+    }
+    else
     {
         return false;
     }
-
-    memcpy(&m_CharBuffer[m_CharBufferLen], _pData, sizeof(JS_ClientCustomCharacter));
-    ++m_CharBufferLen;
-
-    return true;
 }
